@@ -20,9 +20,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 class BaseScanner:
     """Parent class establishing metadata and structural template for direct APIs."""
     def __init__(self, name, brand_color, border_color):
-        self.name = name              # Storefront name
-        self.brand_color = brand_color  # Hex code for HTML buttons
-        self.border_color = border_color # Hex code for HTML card borders
+        self.name = name              
+        self.brand_color = brand_color  
+        self.border_color = border_color 
 
     def fetch_direct_deals(self):
         """Fallback method meant to be overridden by storefront child APIs."""
@@ -58,83 +58,50 @@ class SteamScanner(BaseScanner):
 
 
 class EpicGamesScanner(BaseScanner):
-    """Child class pushing structured queries to Epic Games' production GraphQL endpoint."""
+    """Child class fetching from Epic's static frontend API to bypass GraphQL edge blocks."""
     def __init__(self):
         super().__init__(name="Epic Games", brand_color="#0074e4", border_color="#333333")
-        self.api_url = "https://graphql.epicgames.com/graphql"
+        # Pivoting to the static promotional backend endpoint
+        self.api_url = "https://store-site-backend-static.ak.epicgames.com/freeGamesPromotions?locale=en-US&country=US&allowCountries=US"
 
     def fetch_direct_deals(self):
         deals = []
-        graphql_query = {
-            "query": """
-            query freeGamesQuery {
-                Catalog {
-                    searchStore(category: "freegames", limit: 10) {
-                        elements {
-                            title
-                            productSlug
-                            promotions {
-                                promotionalOffers {
-                                    promotionalOffers {
-                                        discountSetting {
-                                            discountValue
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            """
-        }
-
         try:
-            data_bytes = json.dumps(graphql_query).encode('utf-8')
-            
-            # Full production mock profile headers to pass proxy gateway security
-            headers = {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-                'Origin': 'https://store.epicgames.com',
-                'Referer': 'https://store.epicgames.com/',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
-            
-            req = urllib.request.Request(
-                self.api_url,
-                data=data_bytes,
-                headers=headers,
-                method='POST'  # Force explicit POST payload protocol
-            )
-            
+            # Standard browser user-agent is enough for this static endpoint
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            req = urllib.request.Request(self.api_url, headers=headers)
+
             with urllib.request.urlopen(req) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 elements = res_data.get('data', {}).get('Catalog', {}).get('searchStore', {}).get('elements', [])
-                
+
                 for game in elements:
                     promotions = game.get('promotions')
+                    # Verify the game has an active promotional offer running right now
                     if promotions and promotions.get('promotionalOffers'):
-                        offers = promotions['promotionalOffers'][0]['promotionalOffers']
-                        for offer in offers:
-                            # 0 indicates a complete 100% discount price deduction
-                            if offer.get('discountSetting', {}).get('discountValue') == 0:
-                                slug = game.get('productSlug')
-                                # Fallback handling if productSlug is hidden inside nested page mappings
-                                if not slug and game.get('catalogNs', {}).get('pageMappings'):
-                                    slug = game['catalogNs']['pageMappings'][0].get('pageSlug')
-                                
-                                if slug:
-                                    deals.append({
-                                        'title': game.get('title'),
-                                        'link': f"https://store.epicgames.com/en-US/p/{slug}",
-                                        'store': self
-                                    })
+                        if len(promotions['promotionalOffers']) > 0:
+                            offers = promotions['promotionalOffers'][0].get('promotionalOffers', [])
+                            for offer in offers:
+                                # A discount percentage of 0 means the cost has been fully subsidized (100% off)
+                                discount = offer.get('discountSetting', {}).get('discountPercentage')
+                                if discount == 0:
+                                    
+                                    # Epic stores the URL string in different keys depending on the game
+                                    slug = game.get('productSlug')
+                                    if not slug and game.get('catalogNs', {}).get('mappings'):
+                                        slug = game['catalogNs']['mappings'][0].get('pageSlug')
+                                    if not slug:
+                                        slug = game.get('urlSlug')
+
+                                    if slug:
+                                        clean_slug = slug.replace('/home', '') # Clean up messy Epic database entries
+                                        deals.append({
+                                            'title': game.get('title'),
+                                            'link': f"https://store.epicgames.com/en-US/p/{clean_slug}",
+                                            'store': self
+                                        })
         except Exception as e:
-            print(f"Direct Epic Games GraphQL connection failed: {e}")
+            print(f"Direct Epic Games API connection failed: {e}")
         return deals
 
 # ==========================================
