@@ -8,14 +8,14 @@ EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 
-# FIXED URL: A reliable, highly-active freebie and deal RSS feed
+# The highly reliable GG.deals tracking feed
 RSS_FEED_URL = "https://gg.deals/news/feed/"
 
 def send_email(game_title, game_url):
-    """Sends an email notification when a game is found."""
-    body = f"Good news! The tracker found an active update:\n\n'{game_title}'\n\nLink: {game_url}"
+    """Sends an email notification when a free game is found."""
+    body = f"Good news! A 100% off free game deal was detected:\n\n'{game_title}'\n\nClaim it here: {game_url}"
     msg = MIMEText(body)
-    msg['Subject'] = f"🔥 STEAM TEST DEAL: {game_title}"
+    msg['Subject'] = f"🔥 FREE STEAM GAME ALERT: {game_title}"
     msg['From'] = EMAIL_SENDER
     msg['To'] = EMAIL_RECEIVER
 
@@ -28,13 +28,11 @@ def send_email(game_title, game_url):
         print(f"Failed to send email: {e}")
 
 def check_deals():
-    """Parses the active feed and prints out games found."""
+    """Parses the feed and checks strictly for 100% off / free Steam games."""
     feed = feedparser.parse(RSS_FEED_URL)
     
-    # Check if feed is returning empty to prevent silent failures
     if not feed.entries:
-        print("Warning: The RSS feed is empty or blocked. Forcing a direct test email instead...")
-        send_email("Fallback System Test", "https://store.steampowered.com")
+        print("Feed empty or unavailable during this hour.")
         return
 
     # Track games we've already emailed about to prevent spam
@@ -50,13 +48,13 @@ def check_deals():
     for entry in feed.entries:
         title = entry.title.lower()
         
-        # TEST RULE: Triggers for literally ANY article or deal to guarantee an email
-        if entry.link not in sent_games:
-            send_email(entry.title, entry.link)
-            new_sent_games.append(entry.link)
-            break  # Break immediately after 1 game so you don't get spammed with 30 emails at once!
+        # STRICT SCANNING RULE: Must be free/100% off AND explicitly for Steam
+        if ("100%" in title or "free" in title) and "steam" in title:
+            if entry.link not in sent_games:
+                send_email(entry.title, entry.link)
+                new_sent_games.append(entry.link)
 
-    # Save newly emailed games to history
+    # Save newly emailed games to history so you don't get duplicate emails next hour
     if new_sent_games:
         with open(history_file, "a") as f:
             for link in new_sent_games:
