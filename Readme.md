@@ -1,4 +1,4 @@
-# 🎮 Multi-Store Freebie Bot (Official API Edition)
+# 🎮 Multi-Store Freebie Bot
 
 An automated, cloud-hosted Python application that queries official storefront production APIs and automatically sends cross-platform alerts the exact second a PC game becomes **100% off (Free to Keep)**.
 
