@@ -8,14 +8,14 @@ EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 
-# The RSS feed that updates when games go 100% off
+# The RSS feed that updates when games go on sale
 RSS_FEED_URL = "https://isthereanydeal.com/rss/specials/"
 
 def send_email(game_title, game_url):
     """Sends an email notification when a free game is found."""
-    body = f"Good news! '{game_title}' is currently free (100% off) on Steam.\n\nClaim it here: {game_url}"
+    body = f"Good news! '{game_title}' is currently discounted on Steam.\n\nClaim it here: {game_url}"
     msg = MIMEText(body)
-    msg['Subject'] = f"🔥 FREE STEAM GAME: {game_title}"
+    msg['Subject'] = f"🔥 STEAM TEST DEAL: {game_title}"
     msg['From'] = EMAIL_SENDER
     msg['To'] = EMAIL_RECEIVER
 
@@ -28,7 +28,7 @@ def send_email(game_title, game_url):
         print(f"Failed to send email: {e}")
 
 def check_deals():
-    """Parses the RSS feed and checks for 100% off Steam games."""
+    """Parses the RSS feed and checks for discounted Steam games."""
     feed = feedparser.parse(RSS_FEED_URL)
     
     # Track games we've already emailed about to prevent spam
@@ -43,8 +43,8 @@ def check_deals():
 
     for entry in feed.entries:
         title = entry.title.lower()
-        # Look for indicators of a 100% discount or 'free' on Steam
-        if ("100% off" in title or "free" in title) and "steam" in title:
+        # EDITED LINE: Triggers for ANY percentage off (e.g., 10%, 50%) on Steam
+        if "%" in title and "steam" in title:
             if entry.link not in sent_games:
                 send_email(entry.title, entry.link)
                 new_sent_games.append(entry.link)
