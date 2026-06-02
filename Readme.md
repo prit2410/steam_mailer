@@ -1,6 +1,6 @@
-# 🎮 Steam Freebie Bot
+# 🎮 Multi-Store Freebie Bot
 
-An automated, cloud-hosted Python application that monitors live community deal trackers and automatically sends cross-platform alerts the exact second a game on Steam becomes **100% off (Free to Keep)**.
+An automated, cloud-hosted Python application that monitors live community deal trackers and automatically sends cross-platform alerts the exact second a PC game becomes **100% off (Free to Keep)**.
 
 No server management required—the entire application runs completely free 24/7 utilizing GitHub Actions.
 
@@ -10,10 +10,11 @@ No server management required—the entire application runs completely free 24/7
 
 * **Zero Cost Hosting:** Uses GitHub Actions to execute entirely in the cloud for $0.
 * **Hourly Scans:** Automatically wakes up every hour to check for new freebies.
-* **Smart Bundling:** Combines multiple free games into a single, clean email summary rather than spamming your channels.
-* **Rich HTML Emails:** Replaces plain text with dark-themed, sleek HTML notification cards featuring direct "Claim Game" buttons.
-* **Discord Integration:** Supports native Discord Webhooks to instantly push beautifully formatted embeds directly into your server.
-* **Anti-Spam Memory:** Locally tracks sent deals in `sent_games.txt` so you only get notified about a game once.
+* **Multi-Store Polymorphism:** Seamlessly filters and identifies deals across **Steam**, **Epic Games Store**, and **GOG**.
+* **Smart Bundling:** Combines multiple free games into a single, clean summary rather than spamming your channels.
+* **Dynamic HTML Emails:** Delivers dark-themed, sleek HTML notification cards with buttons custom-branded to the game's storefront platform.
+* **Discord Integration:** Uses native Discord Webhooks to instantly push beautifully formatted embeds matching platform brand colors.
+* **Anti-Spam Memory:** Locally tracks sent deals in `sent_games.txt` so you only get notified about a specific game once.
 
 ---
 
@@ -24,6 +25,7 @@ No server management required—the entire application runs completely free 24/7
 
   * `feedparser` (for parsing community RSS feeds)
   * `smtplib` (for secure SSL email transport)
+* **Architecture:** Object-Oriented Programming (Polymorphic Inheritance)
 * **Automation:** GitHub Actions (Cron Scheduler)
 
 ---
@@ -36,7 +38,7 @@ No server management required—the entire application runs completely free 24/7
 ├── CODE_OF_CONDUCT.md   # Community standards guidelines
 ├── CONTRIBUTING.md      # Instructions for open-source contributors
 ├── LICENSE.md           # Legal MIT Open-Source License
-├── main.py              # Main Python logic (HTML email & Discord dispatch)
+├── main.py              # Main OOP Python logic (HTML email & Discord dispatch)
 ├── requirements.txt     # Python dependencies
 └── README.md            # Project documentation
 ```
@@ -47,58 +49,83 @@ No server management required—the entire application runs completely free 24/7
 
 ### 1. The Trigger
 
-GitHub Actions runs a cron job scheduled at `0 * * * *` (every hour).
+GitHub Actions runs a cron job scheduled at:
+
+```cron
+0 * * * *
+```
+
+(every hour)
+
+---
 
 ### 2. The Scanner
 
-The script fetches a live, community-curated Reddit RSS feed tracking verified Steam store changes.
+The script fetches a live, community-curated RSS feed tracking verified freebie platform findings.
 
-### 3. The Filter
+---
 
-It cross-references active entries against a strict rule matching "free/100% off" labels alongside direct Steam store domain validation.
+### 3. The Object-Oriented Filter
+
+The engine processes data through storefront-specific classes:
+
+* `SteamScanner`
+* `EpicGamesScanner`
+* `GogScanner`
+
+Each inherits from a generic `BaseScanner` and applies platform-specific pattern matching to detect valid deals.
+
+---
 
 ### 4. The Dispatcher
 
-If a new match is found that hasn't been logged in `sent_games.txt`, it:
+If a new match is found (not already in `sent_games.txt`), the bot dynamically constructs:
 
-* Builds a multipart HTML email payload
-* Executes a Discord webhook POST request concurrently
+* A styled multipart **HTML email payload**
+* A contextual **Discord webhook embed**
+
+---
 
 ### 5. The Memory Save
 
-The workflow automatically commits the updated history log back to the repository so it's ready for the next hour's run.
+The workflow automatically commits the updated history log back to the repository, ensuring continuity for the next run.
 
 ---
 
 ## 🔒 Configuration & GitHub Secrets
 
-This repository utilizes **Encrypted GitHub Secrets**. Your private credentials and webhook URLs are completely hidden from public view and injected safely at runtime via environment variables (`os.environ`).
+This repository uses **Encrypted GitHub Secrets** to securely store credentials and webhook URLs. These are injected at runtime via environment variables (`os.environ`).
 
-### Required Secrets (For Email)
+---
 
-* `EMAIL_SENDER`: The automated account executing the transmission (e.g., your bot's Gmail)
-* `EMAIL_PASSWORD`: A secure 16-character Google App Password
-* `EMAIL_RECEIVER`: Your personal target inbox
+### Required Secrets (Email)
 
-### Optional Secrets (For Discord)
+* `EMAIL_SENDER` → Sender email (e.g., bot Gmail)
+* `EMAIL_PASSWORD` → 16-character Google App Password
+* `EMAIL_RECEIVER` → Destination inbox
 
-* `DISCORD_WEBHOOK_URL`: The native webhook URL generated from your Discord channel settings
+---
 
-> If left unconfigured, the bot will gracefully skip Discord and only deliver the email alerts.
+### Optional Secrets (Discord)
+
+* `DISCORD_WEBHOOK_URL` → Discord channel webhook URL
+
+> If not configured, Discord notifications are skipped gracefully.
 
 ---
 
 ## 🚀 Manual Maintenance & Testing
 
-If you ever want to trigger a manual check without waiting for the hour to roll over:
+To trigger the bot manually:
 
-1. Navigate to the **Actions** tab at the top of the repository
-2. Select **Steam Freebie Bot** from the left sidebar
-3. Click the **Run workflow** dropdown on the right side
-4. Click the green button
+1. Go to the **Actions** tab in your repository
+2. Select the workflow (e.g., *Multi-Store Freebie Bot*)
+3. Click **Run workflow**
+4. Confirm execution
 
 ---
 
 ## ⚖️ License
 
-Distributed under the MIT License. See `LICENSE.md` for more information.
+Distributed under the **MIT License**.
+See `LICENSE.md` for more information.
