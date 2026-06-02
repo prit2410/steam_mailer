@@ -202,10 +202,17 @@ def check_deals():
         for game in active_deals:
             link = game['link']
             
-            # Parametric index verification check
-            cursor.execute("SELECT id FROM tracked_games WHERE game_url = %s;", (link,))
+            # Smart duplication check: Match exact URL OR fuzzy match the core title
+            search_title = f"%{game['title']}%" # Creates a wildcard search
+            
+            cursor.execute("""
+                SELECT id FROM tracked_games 
+                WHERE game_url = %s 
+                   OR game_title ILIKE %s;
+            """, (link, search_title))
+            
             if cursor.fetchone() is not None:
-                continue  # Already notified, skip
+                continue  # Already in database under a different URL or messy title, skip!
                 
             found_new_games.append(game)
             
