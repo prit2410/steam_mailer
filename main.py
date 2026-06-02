@@ -8,14 +8,24 @@ EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 
-# The highly reliable GG.deals tracking feed
-RSS_FEED_URL = "https://gg.deals/news/feed/"
+# NEW CLEAN FEED: Explicitly filters Reddit for free Steam games only
+RSS_FEED_URL = "https://www.reddit.com/r/FreeGameFindings/search.rss?q=site:steampowered.com+OR+site:steamcommunity.com&sort=new&restrict_sr=on"
 
 def send_email(game_title, game_url):
-    """Sends an email notification when a free game is found."""
-    body = f"Good news! A 100% off free game deal was detected:\n\n'{game_title}'\n\nClaim it here: {game_url}"
+    """Sends an email notification with the clean game name and direct link."""
+    
+    # Cleans up the title formatting slightly for readability
+    clean_title = game_title.replace("&amp;", "&")
+    
+    body = (
+        f"🔥 A free Steam game is available to claim!\n\n"
+        f"🎮 Game: {clean_title}\n"
+        f"🌐 Direct Link: {game_url}\n\n"
+        f"Open the link, log in, and add it to your library permanently."
+    )
+    
     msg = MIMEText(body)
-    msg['Subject'] = f"🔥 FREE STEAM GAME ALERT: {game_title}"
+    msg['Subject'] = f"🎁 FREE STEAM GAME: {clean_title}"
     msg['From'] = EMAIL_SENDER
     msg['To'] = EMAIL_RECEIVER
 
@@ -23,16 +33,17 @@ def send_email(game_title, game_url):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        print(f"Successfully sent email for: {game_title}")
+        print(f"Successfully sent email for: {clean_title}")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
 def check_deals():
-    """Parses the feed and checks strictly for 100% off / free Steam games."""
-    feed = feedparser.parse(RSS_FEED_URL)
+    """Parses the Reddit RSS feed for raw Steam links."""
+    # Reddit feeds require a User-Agent header so they don't block the request
+    feed = feedparser.parse(RSS_FEED_URL, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) SteamFreebieBot/1.0')
     
     if not feed.entries:
-        print("Feed empty or unavailable during this hour.")
+        print("No new games found in the feed during this hour.")
         return
 
     # Track games we've already emailed about to prevent spam
@@ -47,12 +58,13 @@ def check_deals():
 
     for entry in feed.entries:
         title = entry.title.lower()
+        link = entry.link
         
-        # STRICT SCANNING RULE: Must be free/100% off AND explicitly for Steam
-        if ("100%" in title or "free" in title) and "steam" in title:
-            if entry.link not in sent_games:
-                send_email(entry.title, entry.link)
-                new_sent_games.append(entry.link)
+        # Double check to make sure it's a direct Steam store link
+        if "steampowered.com" in link or "steamcommunity.com" in link:
+            if link not in sent_games:
+                send_email(entry.title, link)
+                new_sent_games.append(link)
 
     # Save newly emailed games to history so you don't get duplicate emails next hour
     if new_sent_games:
