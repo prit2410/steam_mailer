@@ -2,53 +2,127 @@ import os
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import feedparser
 import urllib.request
 import json
-import psycopg2  # Core relational database driver
+import psycopg2
 
 # Load secure credentials from GitHub Actions
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
-DATABASE_URL = os.environ.get("DATABASE_URL")  # Your new PostgreSQL string
-
-RSS_FEED_URL = "https://www.reddit.com/r/FreeGameFindings/new.rss"
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # ==========================================
-# OBJECT-ORIENTED STORE SCANNERS (OOP)
+# OBJECT-ORIENTED STORE SCANNERS (API-DRIVEN)
 # ==========================================
+
 class BaseScanner:
+    """Parent class establishing metadata and structural template for direct APIs."""
     def __init__(self, name, brand_color, border_color):
-        self.name = name
-        self.brand_color = brand_color
-        self.border_color = border_color
-    def matches(self, title, link):
-        return False
+        self.name = name              # Storefront name
+        self.brand_color = brand_color  # Hex code for HTML buttons
+        self.border_color = border_color # Hex code for HTML card borders
+
+    def fetch_direct_deals(self):
+        """Fallback method meant to be overridden by storefront child APIs."""
+        return []
+
 
 class SteamScanner(BaseScanner):
+    """Child class hitting Steam's public storefront specials API directly."""
     def __init__(self):
         super().__init__(name="Steam", brand_color="#5c7e10", border_color="#2a475e")
-    def matches(self, title, link):
-        return ("steampowered.com" in link or "steamcommunity.com" in link) and ("100%" in title or "free" in title)
+        self.api_url = "https://store.steampowered.com/api/featuredcategories/?tab=specials"
+
+    def fetch_direct_deals(self):
+        deals = []
+        try:
+            req = urllib.request.Request(self.api_url, headers={'User-Agent': 'MultiStoreBot/1.0'})
+            with urllib.request.urlopen(req) as response:
+                data = json.loads(response.read().decode('utf-8'))
+                specials = data.get('specials', {}).get('items', [])
+                
+                for item in specials:
+                    # Filter for items that are currently 100% off or listed as 0 cost
+                    if item.get('discount_percent') == 100 or item.get('final_price') == 0:
+                        appid = item.get('id')
+                        deals.append({
+                            'title': item.get('name'),
+                            'link': f"https://store.steampowered.com/app/{appid}/",
+                            'store': self
+                        })
+        except Exception as e:
+            print(f"Direct Steam API connection failed: {e}")
+        return deals
+
 
 class EpicGamesScanner(BaseScanner):
+    """Child class pushing structured queries to Epic Games' production GraphQL endpoint."""
     def __init__(self):
         super().__init__(name="Epic Games", brand_color="#0074e4", border_color="#333333")
-    def matches(self, title, link):
-        return "epicgames.com" in link or "[epic" in title or "epic games" in title
+        self.api_url = "https://graphql.epicgames.com/graphql"
 
-class GogScanner(BaseScanner):
-    def __init__(self):
-        super().__init__(name="GOG", brand_color="#bf00b1", border_color="#4c0046")
-    def matches(self, title, link):
-        return "gog.com" in link or "[gog]" in title
+    def fetch_direct_deals(self):
+        deals = []
+        # Structural payload query exactly matching Epic's launcher engine requirements
+        graphql_query = {
+            "query": """
+            query freeGamesQuery {
+                Catalog {
+                    searchStore(category: "freegames", limit: 10) {
+                        elements {
+                            title
+                            productSlug
+                            promotions {
+                                promotionalOffers {
+                                    promotionalOffers {
+                                        discountSetting {
+                                            discountValue
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            """
+        }
+
+        try:
+            req = urllib.request.Request(
+                self.api_url,
+                data=json.dumps(graphql_query).encode('utf-8'),
+                headers={'Content-Type': 'application/json', 'User-Agent': 'MultiStoreBot/1.0'}
+            )
+            with urllib.request.urlopen(req) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+                elements = res_data.get('data', {}).get('Catalog', {}).get('searchStore', {}).get('elements', [])
+                
+                for game in elements:
+                    promotions = game.get('promotions')
+                    if promotions and promotions.get('promotionalOffers'):
+                        offers = promotions['promotionalOffers'][0]['promotionalOffers']
+                        for offer in offers:
+                            # 0 indicates a complete 100% discount price deduction
+                            if offer.get('discountSetting', {}).get('discountValue') == 0:
+                                slug = game.get('productSlug')
+                                deals.append({
+                                    'title': game.get('title'),
+                                    'link': f"https://store.epicgames.com/en-US/p/{slug}",
+                                    'store': self
+                                })
+        except Exception as e:
+            print(f"Direct Epic Games GraphQL connection failed: {e}")
+        return deals
 
 # ==========================================
 # NOTIFICATION ENGINE
 # ==========================================
+
 def send_combined_alerts(games_list):
+    """Generates unified, platform-branded multi-channel alert formats."""
     game_cards_html = ""
     discord_embeds = []
 
@@ -56,6 +130,7 @@ def send_combined_alerts(games_list):
         clean_title = game['title'].replace("&amp;", "&")
         store = game['store']
         
+        # Construct Dynamic HTML card
         game_cards_html += f"""
         <div style="background-color: #1b2838; border: 1px solid {store.border_color}; border-radius: 4px; padding: 15px; margin-bottom: 15px; font-family: Arial, sans-serif;">
             <span style="background-color: {store.brand_color}; color: #ffffff; padding: 2px 8px; font-size: 11px; font-weight: bold; border-radius: 2px; text-transform: uppercase;">{store.name}</span>
@@ -64,27 +139,29 @@ def send_combined_alerts(games_list):
         </div>
         """
 
+        # Construct Discord embed profile
         hex_color_int = int(store.brand_color.lstrip('#'), 16)
         discord_embeds.append({
             "title": f"🎁 [{store.name}] Freebie: {clean_title}",
             "url": game['link'],
             "color": hex_color_int,
-            "footer": {"text": "Multi-Store Freebie Bot"}
+            "footer": {"text": "Official API Freebie Engine"}
         })
 
+    # Assemble HTML document structure
     html_layout = f"""
     <html>
         <body style="background-color: #101822; padding: 20px; font-family: Arial, sans-serif;">
             <div style="max-width: 600px; margin: 0 auto; background-color: #171a21; padding: 20px; border-radius: 8px; border: 1px solid #1b2838;">
-                <h1 style="color: #ffffff; text-align: center; font-size: 22px; margin-bottom: 25px; border-bottom: 2px solid #2a475e; padding-bottom: 10px;">🔥 Multi-Platform Freebie Alert</h1>
+                <h1 style="color: #ffffff; text-align: center; font-size: 22px; margin-bottom: 25px; border-bottom: 2px solid #2a475e; padding-bottom: 10px;">🔥 Direct API Storefront Alert</h1>
                 {game_cards_html}
-                <p style="color: #8f98a0; font-size: 11px; text-align: center; margin-top: 30px;">Automated Database Engine • GitHub Actions</p>
+                <p style="color: #8f98a0; font-size: 11px; text-align: center; margin-top: 30px;">Automated Storefront Engine • GitHub Actions</p>
             </div>
         </body>
     </html>
     """
 
-    subject = f"🎁 MULTI-STORE FREEBIE ALERT: {len(games_list)} Games Found!"
+    subject = f"🎁 OFFICIAL STORE API ALERT: {len(games_list)} Games Found!"
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = EMAIL_SENDER
@@ -95,12 +172,12 @@ def send_combined_alerts(games_list):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        print("Successfully dispatched multi-store HTML email notification.")
+        print("Successfully dispatched official API HTML email notification.")
     except Exception as e:
         print(f"SMTP Transmission failure: {e}")
 
     if DISCORD_WEBHOOK_URL:
-        payload = {"content": "🔔 **New Free Games Spotted Across Stores!**", "embeds": discord_embeds}
+        payload = {"content": "🔔 **Official API Store Scrapes Complete!**", "embeds": discord_embeds}
         try:
             req = urllib.request.Request(
                 DISCORD_WEBHOOK_URL,
@@ -114,15 +191,11 @@ def send_combined_alerts(games_list):
             print(f"Discord Hook delivery failed: {e}")
 
 # ==========================================
-# MAIN EXECUTION ROUTINE
+# MAIN ROUTING ENGINE
 # ==========================================
-def check_deals():
-    feed = feedparser.parse(RSS_FEED_URL, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) MultiStoreBot/1.0')
-    if not feed.entries:
-        print("Target RSS data source stream is empty this hour.")
-        return
 
-    # Connect to the cloud relational database
+def check_deals():
+    """Orchestrates connections, polls APIs, filters logs, and commits results."""
     try:
         conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
@@ -130,40 +203,37 @@ def check_deals():
         print(f"Database connection error: {e}")
         return
 
-    scanners = [SteamScanner(), EpicGamesScanner(), GogScanner()]
+    # List of active store scanner APIs
+    scanners = [SteamScanner(), EpicGamesScanner()]
     found_new_games = []
 
-    for entry in feed.entries:
-        title_lower = entry.title.lower()
-        link = entry.link
-
-        # Use SQL parameterized query to check if link already exists
-        cursor.execute("SELECT id FROM tracked_games WHERE game_url = %s;", (link,))
-        if cursor.fetchone() is not None:
-            continue  # Already processed this game, skip it
-
-        for store in scanners:
-            if store.matches(title_lower, link):
-                found_new_games.append({
-                    'title': entry.title,
-                    'link': link,
-                    'store': store
-                })
+    for store in scanners:
+        print(f"Querying active {store.name} storefront APIs...")
+        active_deals = store.fetch_direct_deals()
+        
+        for game in active_deals:
+            link = game['link']
+            
+            # Parametric index verification check
+            cursor.execute("SELECT id FROM tracked_games WHERE game_url = %s;", (link,))
+            if cursor.fetchone() is not None:
+                continue  # Already notified, skip
                 
-                # Write newly discovered game straight into your database architecture
-                cursor.execute(
-                    "INSERT INTO tracked_games (game_title, game_url, store_platform) VALUES (%s, %s, %s);",
-                    (entry.title, link, store.name)
-                )
-                break
+            found_new_games.append(game)
+            
+            # SQL write transaction
+            cursor.execute(
+                "INSERT INTO tracked_games (game_title, game_url, store_platform) VALUES (%s, %s, %s);",
+                (game['title'], link, store.name)
+            )
 
     if found_new_games:
         send_combined_alerts(found_new_games)
-        conn.commit()  # Save changes to the live cloud database permanently
+        conn.commit()  # Push database mutations to cluster live
+        print(f"Operation complete. {len(found_new_games)} entries written to Postgres.")
     else:
-        print("No new verified cross-platform freebies detected this cycle.")
+        print("No new direct storefront promotions located during this cycle.")
 
-    # Clean up server resources
     cursor.close()
     conn.close()
 
