@@ -8,24 +8,30 @@ EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
 
-# NEW CLEAN FEED: Explicitly filters Reddit for free Steam games only
+# The clean Reddit RSS feed that looks specifically for free Steam games
 RSS_FEED_URL = "https://www.reddit.com/r/FreeGameFindings/search.rss?q=site:steampowered.com+OR+site:steamcommunity.com&sort=new&restrict_sr=on"
 
-def send_email(game_title, game_url):
-    """Sends an email notification with the clean game name and direct link."""
+def send_combined_email(games_list):
+    """Sends exactly ONE email containing all the newly found free games."""
     
-    # Cleans up the title formatting slightly for readability
-    clean_title = game_title.replace("&amp;", "&")
+    # Build a clean text body by looping through our bundle
+    body_elements = ["🔥 New free Steam games have been detected!\n", "---"]
+    for game in games_list:
+        clean_title = game['title'].replace("&amp;", "&")
+        body_elements.append(f"🎮 Game: {clean_title}")
+        body_elements.append(f"🌐 Direct Link: {game['link']}\n---")
     
-    body = (
-        f"🔥 A free Steam game is available to claim!\n\n"
-        f"🎮 Game: {clean_title}\n"
-        f"🌐 Direct Link: {game_url}\n\n"
-        f"Open the link, log in, and add it to your library permanently."
-    )
+    body_elements.append("\nOpen the links, log in, and add them to your library permanently.")
+    body = "\n".join(body_elements)
     
+    # Determine subject line based on how many games were found
+    if len(games_list) == 1:
+        subject = f"🎁 FREE STEAM GAME: {games_list[0]['title'].replace('&amp;', '&')}"
+    else:
+        subject = f"🎁 MULTIPLE FREE STEAM GAMES FOUND ({len(games_list)} Games)"
+
     msg = MIMEText(body)
-    msg['Subject'] = f"🎁 FREE STEAM GAME: {clean_title}"
+    msg['Subject'] = subject
     msg['From'] = EMAIL_SENDER
     msg['To'] = EMAIL_RECEIVER
 
@@ -33,13 +39,12 @@ def send_email(game_title, game_url):
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        print(f"Successfully sent email for: {clean_title}")
+        print(f"Successfully sent a bundled email containing {len(games_list)} games.")
     except Exception as e:
         print(f"Failed to send email: {e}")
 
 def check_deals():
-    """Parses the Reddit RSS feed for raw Steam links."""
-    # Reddit feeds require a User-Agent header so they don't block the request
+    """Parses the feed and bundles new entries together to prevent duplicate alerts."""
     feed = feedparser.parse(RSS_FEED_URL, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) SteamFreebieBot/1.0')
     
     if not feed.entries:
@@ -54,23 +59,29 @@ def check_deals():
     else:
         sent_games = []
 
-    new_sent_games = []
+    found_new_games = []
+    new_links_to_log = []
 
     for entry in feed.entries:
-        title = entry.title.lower()
         link = entry.link
         
-        # Double check to make sure it's a direct Steam store link
+        # Ensure it's a valid Steam store link
         if "steampowered.com" in link or "steamcommunity.com" in link:
             if link not in sent_games:
-                send_email(entry.title, link)
-                new_sent_games.append(link)
+                # Instead of sending an email here, add it to our bundle list
+                found_new_games.append({'title': entry.title, 'link': link})
+                new_links_to_log.append(link)
 
-    # Save newly emailed games to history so you don't get duplicate emails next hour
-    if new_sent_games:
+    # If our bundle list isn't empty, send exactly ONE email
+    if found_new_games:
+        send_combined_email(found_new_games)
+        
+        # Save newly emailed games to history so you don't get them next hour
         with open(history_file, "a") as f:
-            for link in new_sent_games:
+            for link in new_links_to_log:
                 f.write(link + "\n")
+    else:
+        print("No brand new free games detected since the last check.")
 
 if __name__ == "__main__":
     check_deals()
