@@ -1,8 +1,8 @@
-# 🎮 Multi-Store Freebie Bot
+# 🎮 Multi-Store Freebie Bot (Database Edition)
 
 An automated, cloud-hosted Python application that monitors live community deal trackers and automatically sends cross-platform alerts the exact second a PC game becomes **100% off (Free to Keep)**.
 
-No server management required—the entire application runs completely free 24/7 utilizing GitHub Actions.
+By integrating a dedicated cloud database, this application runs entirely **stateless**—eliminating repository file modifications and utilizing cloud relational mapping for instant tracking data memory.
 
 ---
 
@@ -10,22 +10,24 @@ No server management required—the entire application runs completely free 24/7
 
 * **Zero Cost Hosting:** Uses GitHub Actions to execute entirely in the cloud for $0.
 * **Hourly Scans:** Automatically wakes up every hour to check for new freebies.
-* **Multi-Store Polymorphism:** Seamlessly filters and identifies deals across **Steam**, **Epic Games Store**, and **GOG**.
+* **Relational Storage Persistence:** Migrated from flat-text storage (`sent_games.txt`) to a hosted **PostgreSQL** cluster for secure tracking memory.
+* **Multi-Store Polymorphism:** Seamlessly filters and identifies deals across **Steam**, **Epic Games Store**, and **GOG** via an object-oriented code framework.
 * **Smart Bundling:** Combines multiple free games into a single, clean summary rather than spamming your channels.
 * **Dynamic HTML Emails:** Delivers dark-themed, sleek HTML notification cards with buttons custom-branded to the game's storefront platform.
 * **Discord Integration:** Uses native Discord Webhooks to instantly push beautifully formatted embeds matching platform brand colors.
-* **Anti-Spam Memory:** Locally tracks sent deals in `sent_games.txt` so you only get notified about a specific game once.
 
 ---
 
 ## 🛠️ Technology Stack
 
 * **Language:** Python 3.10+
+* **Database Backend:** PostgreSQL (Hosted on Neon.tech)
 * **Libraries:**
 
   * `feedparser` (for parsing community RSS feeds)
+  * `psycopg2-binary` (PostgreSQL adapter for Python)
   * `smtplib` (for secure SSL email transport)
-* **Architecture:** Object-Oriented Programming (Polymorphic Inheritance)
+* **Architecture:** Object-Oriented Programming (Polymorphic Inheritance) & Relational Storage Persistence
 * **Automation:** GitHub Actions (Cron Scheduler)
 
 ---
@@ -34,12 +36,12 @@ No server management required—the entire application runs completely free 24/7
 
 ```text
 ├── .github/workflows/
-│   └── run_bot.yml      # GitHub Actions automation workflow
+│   └── run_bot.yml      # GitHub Actions automation workflow (Stateless execution)
 ├── CODE_OF_CONDUCT.md   # Community standards guidelines
 ├── CONTRIBUTING.md      # Instructions for open-source contributors
 ├── LICENSE.md           # Legal MIT Open-Source License
-├── main.py              # Main OOP Python logic (HTML email & Discord dispatch)
-├── requirements.txt     # Python dependencies
+├── main.py              # Main OOP Python logic (SQL verification & alert dispatch)
+├── requirements.txt     # Python dependencies (including database drivers)
 └── README.md            # Project documentation
 ```
 
@@ -55,7 +57,7 @@ GitHub Actions runs a cron job scheduled at:
 0 * * * *
 ```
 
-(every hour)
+*(every hour)*
 
 ---
 
@@ -65,41 +67,56 @@ The script fetches a live, community-curated RSS feed tracking verified freebie 
 
 ---
 
-### 3. The Object-Oriented Filter
+### 3. The SQL Verification Step
 
-The engine processes data through storefront-specific classes:
+The program opens a secure TLS connection to the PostgreSQL database and executes a parameterized lookup query for each game:
+
+```sql
+SELECT id FROM tracked_games WHERE game_url = %s;
+```
+
+* If a record exists → the game is skipped (prevents duplicate alerts)
+* If no record exists → the game is processed further
+
+---
+
+### 4. The Object-Oriented Filter & Dispatcher
+
+New items are passed through specialized storefront classes:
 
 * `SteamScanner`
 * `EpicGamesScanner`
 * `GogScanner`
 
-Each inherits from a generic `BaseScanner` and applies platform-specific pattern matching to detect valid deals.
+Each extracts platform-specific branding and constructs:
+
+* Styled **HTML email notifications**
+* Rich **Discord webhook embeds**
 
 ---
 
-### 4. The Dispatcher
+### 5. Database Commit
 
-If a new match is found (not already in `sent_games.txt`), the bot dynamically constructs:
+Newly discovered freebies are stored in a single transaction:
 
-* A styled multipart **HTML email payload**
-* A contextual **Discord webhook embed**
+```sql
+INSERT INTO tracked_games (game_title, game_url, store_platform)
+VALUES (%s, %s, %s);
+```
 
----
-
-### 5. The Memory Save
-
-The workflow automatically commits the updated history log back to the repository, ensuring continuity for the next run.
+This keeps the system fully stateless and independent of repository storage.
 
 ---
 
 ## 🔒 Configuration & GitHub Secrets
 
-This repository uses **Encrypted GitHub Secrets** to securely store credentials and webhook URLs. These are injected at runtime via environment variables (`os.environ`).
+This project uses **GitHub Encrypted Secrets** to securely store credentials and connection strings. All secrets are injected at runtime via environment variables (`os.environ`).
 
 ---
 
-### Required Secrets (Email)
+### Required Secrets (Core Functionality)
 
+* `DATABASE_URL` → PostgreSQL connection string (from Neon dashboard)
 * `EMAIL_SENDER` → Sender email (e.g., bot Gmail)
 * `EMAIL_PASSWORD` → 16-character Google App Password
 * `EMAIL_RECEIVER` → Destination inbox
