@@ -1,0 +1,39 @@
+name: Steam Freebie Bot
+
+on:
+  schedule:
+    # This instructs GitHub to run the script automatically every hour
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allows you to trigger it manually anytime for testing
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository Code
+      uses: actions/checkout@v4
+
+    - name: Set Up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install Dependencies
+      run: |
+        pip install -r requirements.txt
+
+    - name: Run Script
+      env:
+        EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+        EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+        EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+      run: python main.py
+
+    - name: Save History Log
+      # This saves the 'sent_games.txt' file back to your repo so you don't get duplicate emails
+      run: |
+        git config --global user.name 'github-actions'
+        git config --global user.email 'github-actions@github.com'
+        git add sent_games.txt || true
+        git commit -m "Update sent games log" || true
+        git push || true
