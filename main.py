@@ -61,7 +61,8 @@ class EpicGamesScanner(BaseScanner):
     """Child class pushing structured queries to Epic Games' production GraphQL endpoint."""
     def __init__(self):
         super().__init__(name="Epic Games", brand_color="#0074e4", border_color="#333333")
-        self.api_url = "https://graphql.epicgames.com/graphql"
+        # Appended trailing slash to prevent route-dropping 404 responses
+        self.api_url = "https://graphql.epicgames.com/graphql/"
 
     def fetch_direct_deals(self):
         deals = []
@@ -91,11 +92,21 @@ class EpicGamesScanner(BaseScanner):
         }
 
         try:
+            data_bytes = json.dumps(graphql_query).encode('utf-8')
+            
+            # Browser identity emulation and strict json headers to satisfy target gateway security
+            headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            
             req = urllib.request.Request(
                 self.api_url,
-                data=json.dumps(graphql_query).encode('utf-8'),
-                headers={'Content-Type': 'application/json', 'User-Agent': 'MultiStoreBot/1.0'}
+                data=data_bytes,
+                headers=headers
             )
+            
             with urllib.request.urlopen(req) as response:
                 res_data = json.loads(response.read().decode('utf-8'))
                 elements = res_data.get('data', {}).get('Catalog', {}).get('searchStore', {}).get('elements', [])
@@ -108,11 +119,16 @@ class EpicGamesScanner(BaseScanner):
                             # 0 indicates a complete 100% discount price deduction
                             if offer.get('discountSetting', {}).get('discountValue') == 0:
                                 slug = game.get('productSlug')
-                                deals.append({
-                                    'title': game.get('title'),
-                                    'link': f"https://store.epicgames.com/en-US/p/{slug}",
-                                    'store': self
-                                })
+                                # Fallback handle if productSlug isn't directly assigned
+                                if not slug and game.get('catalogNs', {}).get('pageMappings'):
+                                    slug = game['catalogNs']['pageMappings'][0].get('pageSlug')
+                                
+                                if slug:
+                                    deals.append({
+                                        'title': game.get('title'),
+                                        'link': f"https://store.epicgames.com/en-US/p/{slug}",
+                                        'store': self
+                                    })
         except Exception as e:
             print(f"Direct Epic Games GraphQL connection failed: {e}")
         return deals
@@ -210,6 +226,7 @@ def check_deals():
     for store in scanners:
         print(f"Querying active {store.name} storefront APIs...")
         active_deals = store.fetch_direct_deals()
+        print(f"Fetched {len(active_deals)} total candidate deals from {store.name}.")
         
         for game in active_deals:
             link = game['link']
