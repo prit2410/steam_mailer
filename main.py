@@ -44,7 +44,7 @@ def check_deals():
     for entry in feed.entries:
         title = entry.title.lower()
         # Look for indicators of a 100% discount or 'free' on Steam
-        if ("100% off" in title or "free" in title) and "steam" in title:
+        if "steam" in title:
             if entry.link not in sent_games:
                 send_email(entry.title, entry.link)
                 new_sent_games.append(entry.link)
