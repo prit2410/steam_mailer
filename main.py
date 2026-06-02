@@ -10,102 +10,145 @@ import json
 EMAIL_SENDER = os.environ.get("EMAIL_SENDER")
 EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 EMAIL_RECEIVER = os.environ.get("EMAIL_RECEIVER")
-DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")  # New Optional Secret
+DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL")
 
-RSS_FEED_URL = "https://www.reddit.com/r/FreeGameFindings/search.rss?q=site:steampowered.com+OR+site:steamcommunity.com&sort=new&restrict_sr=on"
+# Clean community feed tracking free game findings across all platforms
+RSS_FEED_URL = "https://www.reddit.com/r/FreeGameFindings/new.rss"
 
-def send_combined_email(games_list):
-    """Sends exactly ONE visually stunning HTML email with all free games."""
+# ==========================================
+# OBJECT-ORIENTED STORE SCANNERS (OOP)
+# ==========================================
+
+class BaseScanner:
+    """Parent class establishing the structural template for all storefronts."""
+    def __init__(self, name, brand_color, border_color):
+        self.name = name              # e.g., "Steam"
+        self.brand_color = brand_color  # Hex code for HTML button backgrounds
+        self.border_color = border_color # Hex code for HTML card borders
+
+    def matches(self, title, link):
+        """Fallback rule template; must be overridden by child classes."""
+        return False
+
+
+class SteamScanner(BaseScanner):
+    """Child class specialized in isolating Steam deals."""
+    def __init__(self):
+        super().__init__(name="Steam", brand_color="#5c7e10", border_color="#2a475e")
+
+    def matches(self, title, link):
+        # Strict validation: Title must mention steam and the link must point to steam domains
+        is_steam_url = "steampowered.com" in link or "steamcommunity.com" in link
+        return is_steam_url and ("100%" in title or "free" in title)
+
+
+class EpicGamesScanner(BaseScanner):
+    """Child class specialized in isolating Epic Games Store deals."""
+    def __init__(self):
+        super().__init__(name="Epic Games", brand_color="#0074e4", border_color="#333333")
+
+    def matches(self, title, link):
+        # Captures titles tagged with [Epic Games] or links going to epicgames.com
+        return "epicgames.com" in link or "[epic" in title or "epic games" in title
+
+
+class GogScanner(BaseScanner):
+    """Child class specialized in isolating GOG (Good Old Games) deals."""
+    def __init__(self):
+        super().__init__(name="GOG", brand_color="#bf00b1", border_color="#4c0046")
+
+    def matches(self, title, link):
+        # Captures titles tagged with [GOG] or linking to gog.com
+        return "gog.com" in link or "[gog]" in title
+
+
+# ==========================================
+# NOTIFICATION ENGINE
+# ==========================================
+
+def send_combined_alerts(games_list):
+    """Dispatches beautiful HTML emails and Discord posts for all platforms."""
     
-    # 1. Generate the dynamic HTML game cards
+    # 1. Build Dynamic HTML Cards based on the specific storefront design
     game_cards_html = ""
+    discord_embeds = []
+
     for game in games_list:
         clean_title = game['title'].replace("&amp;", "&")
+        store = game['store'] # This is the object template (SteamScanner, EpicScanner, etc.)
+        
+        # Append HTML Card string
         game_cards_html += f"""
-        <div style="background-color: #1b2838; border: 1px solid #2a475e; border-radius: 4px; padding: 15px; margin-bottom: 15px; font-family: Arial, sans-serif;">
-            <h3 style="color: #66c0f4; margin-top: 0; font-size: 18px;">🎮 {clean_title}</h3>
-            <p style="color: #c7d5df; font-size: 14px;">A new 100% off deal was detected on the Steam platform.</p>
-            <a href="{game['link']}" style="display: inline-block; background-color: #5c7e10; color: #ffffff; padding: 10px 20px; text-decoration: none; font-weight: bold; border-radius: 2px; font-size: 14px; margin-top: 5px;">Claim Game</a>
+        <div style="background-color: #1b2838; border: 1px solid {store.border_color}; border-radius: 4px; padding: 15px; margin-bottom: 15px; font-family: Arial, sans-serif;">
+            <span style="background-color: {store.brand_color}; color: #ffffff; padding: 2px 8px; font-size: 11px; font-weight: bold; border-radius: 2px; text-transform: uppercase;">{store.name}</span>
+            <h3 style="color: #66c0f4; margin-top: 8px; margin-bottom: 10px; font-size: 18px;">🎮 {clean_title}</h3>
+            <a href="{game['link']}" style="display: inline-block; background-color: {store.brand_color}; color: #ffffff; padding: 10px 20px; text-decoration: none; font-weight: bold; border-radius: 2px; font-size: 14px;">Claim on {store.name}</a>
         </div>
         """
 
-    # 2. Complete HTML Document Layout
-    html_body = f"""
+        # Append Discord Structure
+        # Converts hex string to an integer decimal for Discord's API color fields
+        hex_color_int = int(store.brand_color.lstrip('#'), 16)
+        discord_embeds.append({
+            "title": f"🎁 [{store.name}] Freebie: {clean_title}",
+            "url": game['link'],
+            "color": hex_color_int,
+            "footer": {"text": "Multi-Store Freebie Bot"}
+        })
+
+    # 2. Email Transmission Processing
+    html_layout = f"""
     <html>
-        <body style="background-color: #101822; margin: 0; padding: 20px; font-family: Arial, sans-serif;">
+        <body style="background-color: #101822; padding: 20px; font-family: Arial, sans-serif;">
             <div style="max-width: 600px; margin: 0 auto; background-color: #171a21; padding: 20px; border-radius: 8px; border: 1px solid #1b2838;">
-                <h1 style="color: #ffffff; text-align: center; font-size: 24px; margin-bottom: 25px; border-bottom: 2px solid #2a475e; padding-bottom: 10px;">🎁 Steam Freebie Alert</h1>
-                <p style="color: #acb2b8; font-size: 15px; margin-bottom: 20px;">The cloud scanner has located the following free titles available to claim permanently:</p>
-                
+                <h1 style="color: #ffffff; text-align: center; font-size: 22px; margin-bottom: 25px; border-bottom: 2px solid #2a475e; padding-bottom: 10px;">🔥 Multi-Platform Freebie Alert</h1>
                 {game_cards_html}
-                
-                <p style="color: #8f98a0; font-size: 12px; text-align: center; margin-top: 30px;">Automated via Steam Freebie Bot • GitHub Actions</p>
+                <p style="color: #8f98a0; font-size: 11px; text-align: center; margin-top: 30px;">Automated Cross-Store Engine • GitHub Actions</p>
             </div>
         </body>
     </html>
     """
 
-    # 3. Create Multipart Email Payload
-    if len(games_list) == 1:
-        subject = f"🎁 FREE STEAM GAME: {games_list[0]['title'].replace('&amp;', '&')}"
-    else:
-        subject = f"🎁 MULTIPLE FREE STEAM GAMES FOUND ({len(games_list)} Games)"
-
+    subject = f"🎁 MULTI-STORE FREEBIE ALERT: {len(games_list)} Games Found!"
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = EMAIL_SENDER
     msg['To'] = EMAIL_RECEIVER
-    msg.attach(MIMEText(html_body, 'html'))
+    msg.attach(MIMEText(html_layout, 'html'))
 
     try:
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(EMAIL_SENDER, EMAIL_PASSWORD)
             server.sendmail(EMAIL_SENDER, EMAIL_RECEIVER, msg.as_string())
-        print(f"Successfully sent HTML email containing {len(games_list)} games.")
+        print("Successfully dispatched multi-store HTML email notification.")
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        print(f"SMTP Transmission failure: {e}")
 
+    # 3. Discord Webhook Processing
+    if DISCORD_WEBHOOK_URL:
+        payload = {"content": "🔔 **New Free Games Spotted Across Stores!**", "embeds": discord_embeds}
+        try:
+            req = urllib.request.Request(
+                DISCORD_WEBHOOK_URL,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json', 'User-Agent': 'MultiStoreBot/1.0'}
+            )
+            with urllib.request.urlopen(req) as response:
+                if response.status in [200, 204]:
+                    print("Successfully pushed alerts to Discord channel.")
+        except Exception as e:
+            print(f"Discord Hook delivery failed: {e}")
 
-def send_discord_webhook(games_list):
-    """Pushes a sleek embedded message to Discord channel via native Webhook."""
-    if not DISCORD_WEBHOOK_URL:
-        return  # Silently skip if the user hasn't configured Discord
-
-    embeds = []
-    for game in games_list:
-        clean_title = game['title'].replace("&amp;", "&")
-        embeds.append({
-            "title": f"🎁 Free Game: {clean_title}",
-            "url": game['link'],
-            "description": "Click the title to go directly to Steam and add it to your library!",
-            "color": 6061584,  # Green accent color code
-            "footer": {"text": "Steam Freebie Bot Scanner"}
-        })
-
-    payload = {
-        "content": "🔥 **New Free Steam Games Detected!**",
-        "embeds": embeds
-    }
-
-    try:
-        req = urllib.request.Request(
-            DISCORD_WEBHOOK_URL,
-            data=json.dumps(payload).encode('utf-8'),
-            headers={'Content-Type': 'application/utf-8', 'User-Agent': 'SteamFreebieBot/1.0'}
-        )
-        with urllib.request.urlopen(req) as response:
-            if response.status in [200, 204]:
-                print(f"Successfully pushed Discord alert for {len(games_list)} games.")
-    except Exception as e:
-        print(f"Discord Webhook notification failed: {e}")
-
+# ==========================================
+# MAIN EXECUTION ROUTINE
+# ==========================================
 
 def check_deals():
-    """Parses the feed, bundles entries, and fires cross-platform alerts."""
-    feed = feedparser.parse(RSS_FEED_URL, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) SteamFreebieBot/1.0')
+    """Fetches the master feed and evaluates titles across active store objects."""
+    feed = feedparser.parse(RSS_FEED_URL, agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) MultiStoreBot/1.0')
     
     if not feed.entries:
-        print("No new games found in the feed during this hour.")
+        print("Target RSS data source stream is empty this hour.")
         return
 
     history_file = "sent_games.txt"
@@ -115,26 +158,37 @@ def check_deals():
     else:
         sent_games = []
 
+    # Initialize our class scanner roster
+    scanners = [SteamScanner(), EpicGamesScanner(), GogScanner()]
+    
     found_new_games = []
     new_links_to_log = []
 
     for entry in feed.entries:
+        title_lower = entry.title.lower()
         link = entry.link
-        if "steampowered.com" in link or "steamcommunity.com" in link:
-            if link not in sent_games:
-                found_new_games.append({'title': entry.title, 'link': link})
+
+        if link in sent_games:
+            continue
+
+        # Run polymorphic checks across all initialized storefront rules
+        for store in scanners:
+            if store.matches(title_lower, link):
+                found_new_games.append({
+                    'title': entry.title,
+                    'link': link,
+                    'store': store  # Storing the entire class instance preserves custom brand assets!
+                })
                 new_links_to_log.append(link)
+                break # Match confirmed for this item; skip evaluating remaining scanners
 
     if found_new_games:
-        # Dispatch both notification mechanisms natively
-        send_combined_email(found_new_games)
-        send_discord_webhook(found_new_games)
-        
+        send_combined_alerts(found_new_games)
         with open(history_file, "a") as f:
             for link in new_links_to_log:
                 f.write(link + "\n")
     else:
-        print("No brand new free games detected since the last check.")
+        print("No new verified cross-platform freebies detected this cycle.")
 
 if __name__ == "__main__":
     check_deals()
