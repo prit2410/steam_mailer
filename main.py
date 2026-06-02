@@ -61,12 +61,10 @@ class EpicGamesScanner(BaseScanner):
     """Child class pushing structured queries to Epic Games' production GraphQL endpoint."""
     def __init__(self):
         super().__init__(name="Epic Games", brand_color="#0074e4", border_color="#333333")
-        # Appended trailing slash to prevent route-dropping 404 responses
-        self.api_url = "https://graphql.epicgames.com/graphql/"
+        self.api_url = "https://graphql.epicgames.com/graphql"
 
     def fetch_direct_deals(self):
         deals = []
-        # Structural payload query exactly matching Epic's launcher engine requirements
         graphql_query = {
             "query": """
             query freeGamesQuery {
@@ -94,17 +92,23 @@ class EpicGamesScanner(BaseScanner):
         try:
             data_bytes = json.dumps(graphql_query).encode('utf-8')
             
-            # Browser identity emulation and strict json headers to satisfy target gateway security
+            # Full production mock profile headers to pass proxy gateway security
             headers = {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Origin': 'https://store.epicgames.com',
+                'Referer': 'https://store.epicgames.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
             
             req = urllib.request.Request(
                 self.api_url,
                 data=data_bytes,
-                headers=headers
+                headers=headers,
+                method='POST'  # Force explicit POST payload protocol
             )
             
             with urllib.request.urlopen(req) as response:
@@ -119,7 +123,7 @@ class EpicGamesScanner(BaseScanner):
                             # 0 indicates a complete 100% discount price deduction
                             if offer.get('discountSetting', {}).get('discountValue') == 0:
                                 slug = game.get('productSlug')
-                                # Fallback handle if productSlug isn't directly assigned
+                                # Fallback handling if productSlug is hidden inside nested page mappings
                                 if not slug and game.get('catalogNs', {}).get('pageMappings'):
                                     slug = game['catalogNs']['pageMappings'][0].get('pageSlug')
                                 
