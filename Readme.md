@@ -29,3 +29,33 @@ No server management required—the entire application runs completely free 24/7
 ├── main.py              # Main Python logic for filtering & emailing
 ├── requirements.txt     # Python dependencies
 └── README.md            # Project documentation
+
+⚙️ How It Works Under the Hood The Trigger: GitHub Actions runs a cron job scheduled at 0 * * * * (every hour).
+
+The Scanner: The script fetches a live, community-curated Reddit **RSS** feed tracking verified Steam store changes.
+
+The Filter: It cross-references active entries against a strict rule matching *free/**100**% off* labels alongside direct Steam store domain validation.
+
+The Dispatcher: If a new match is found that hasn't been logged in sent_games.txt, it builds a multipart **HTML** email payload and executes a Discord webhook **POST** request concurrently.
+
+The Memory Save: The workflow automatically commits the updated history log back to the repository so it's ready for the next hour's run.
+
+🔒 Configuration & GitHub Secrets This repository utilizes Encrypted GitHub Secrets. Your private credentials and webhook URLs are completely hidden from public view and injected safely at runtime via environment variables (os.environ).
+
+Required Secrets (For Email) EMAIL_SENDER: The automated account executing the transmission (e.g., your bot's Gmail).
+
+EMAIL_PASSWORD: A secure 16-character Google App Password.
+
+EMAIL_RECEIVER: Your personal target inbox.
+
+Optional Secrets (For Discord) DISCORD_WEBHOOK_URL: The native webhook **URL** generated from your Discord channel settings. If left unconfigured, the bot will gracefully skip Discord and only deliver the email alerts.
+
+🚀 Manual Maintenance & Testing If you ever want to trigger a manual check without waiting for the hour to roll over:
+
+Navigate to the Actions tab at the top of the repository.
+
+Select Steam Freebie Bot from the left sidebar.
+
+Click the Run workflow dropdown on the right side and click the green button.
+
+⚖️ License Distributed under the **MIT** License. See **LICENSE**.md for more information.
